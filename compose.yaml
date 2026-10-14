@@ -1,0 +1,190 @@
+# ==============================================================================
+# StockMaster Full Stack - Docker Compose Specification (compose.yaml)
+# Orquestación de Arquitectura de Servicios Micro-Modulares
+# ==============================================================================
+
+services:
+  # ----------------------------------------------------------------------------
+  # 1. Base de Datos Principal NoSQL: MongoDB
+  # ----------------------------------------------------------------------------
+  mongodb:
+    image: mongo:7.0
+    container_name: stockmaster-mongodb
+    restart: unless-stopped
+    ports:
+      - "${MONGO_PORT:-27017}:27017"
+    environment:
+      MONGO_INITDB_DATABASE: ${MONGO_DB_NAME:-stockmaster_db}
+    volumes:
+      - stockmaster_mongo_data:/data/db
+    networks:
+      - stockmaster-net
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ----------------------------------------------------------------------------
+  # 2. Base de Datos Relacional SQL: MySQL (Módulo de Compras Laravel)
+  # ----------------------------------------------------------------------------
+  mysql:
+    image: mysql:8.0
+    container_name: stockmaster-mysql
+    restart: unless-stopped
+    ports:
+      - "${MYSQL_PORT:-3306}:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_secure_password}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-stockmaster_purchases}
+      MYSQL_USER: ${MYSQL_USER:-stockmaster_user}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-stockmaster_secure_password}
+    volumes:
+      - stockmaster_mysql_data:/var/lib/mysql
+    networks:
+      - stockmaster-net
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  # ----------------------------------------------------------------------------
+  # 3. Backend Principal: Node.js + Express REST API
+  # ----------------------------------------------------------------------------
+  api:
+    build:
+      context: ./backend-node
+      dockerfile: Dockerfile
+    container_name: stockmaster-api
+    restart: unless-stopped
+    ports:
+      - "${NODE_PORT:-5000}:5000"
+    environment:
+      NODE_ENV: ${APP_ENV:-development}
+      PORT: 5000
+      MONGO_URI: mongodb://mongodb:27017/${MONGO_DB_NAME:-stockmaster_db}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-1h}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+      JWT_REFRESH_EXPIRES_IN: ${JWT_REFRESH_EXPIRES_IN:-7d}
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000}
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY}
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    networks:
+      - stockmaster-net
+
+  # ----------------------------------------------------------------------------
+  # 4. Servicio Complementario: PHP / Laravel (Compras y Recepciones)
+  # ----------------------------------------------------------------------------
+  laravel:
+    build:
+      context: ./backend-laravel
+      dockerfile: Dockerfile
+    container_name: stockmaster-laravel
+    restart: unless-stopped
+    ports:
+      - "${LARAVEL_PORT:-8000}:8000"
+    environment:
+      APP_NAME: ${LARAVEL_APP_NAME:-StockMaster-Compras}
+      APP_ENV: ${LARAVEL_APP_ENV:-local}
+      APP_KEY: ${LARAVEL_APP_KEY}
+      APP_DEBUG: "true"
+      APP_URL: http://localhost:8000
+      DB_CONNECTION: mysql
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_DATABASE: ${MYSQL_DATABASE:-stockmaster_purchases}
+      DB_USERNAME: ${MYSQL_USER:-stockmaster_user}
+      DB_PASSWORD: ${MYSQL_PASSWORD:-stockmaster_secure_password}
+      NODE_INTERNAL_API_URL: http://api:5000/api/v1
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY}
+    depends_on:
+      mysql:
+        condition: service_healthy
+      api:
+        condition: service_started
+    networks:
+      - stockmaster-net
+
+  # ----------------------------------------------------------------------------
+  # 5. Base de Datos Dedicada para WordPress: MySQL WP
+  # ----------------------------------------------------------------------------
+  wordpress-db:
+    image: mysql:8.0
+    container_name: stockmaster-wp-db
+    restart: unless-stopped
+    ports:
+      - "${WP_DB_PORT:-3307}:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${WP_DB_ROOT_PASSWORD:-wp_root_secure_password}
+      MYSQL_DATABASE: ${WP_DB_NAME:-stockmaster_wp}
+      MYSQL_USER: ${WP_DB_USER:-wp_user}
+      MYSQL_PASSWORD: ${WP_DB_PASSWORD:-wp_secure_password}
+    volumes:
+      - stockmaster_wp_db_data:/var/lib/mysql
+    networks:
+      - stockmaster-net
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  # ----------------------------------------------------------------------------
+  # 6. WordPress Headless (CMS para Centro de Ayuda y Manuales)
+  # ----------------------------------------------------------------------------
+  wordpress:
+    image: wordpress:6-apache
+    container_name: stockmaster-wordpress
+    restart: unless-stopped
+    ports:
+      - "${WORDPRESS_PORT:-8080}:80"
+    environment:
+      WORDPRESS_DB_HOST: wordpress-db:3306
+      WORDPRESS_DB_NAME: ${WP_DB_NAME:-stockmaster_wp}
+      WORDPRESS_DB_USER: ${WP_DB_USER:-wp_user}
+      WORDPRESS_DB_PASSWORD: ${WP_DB_PASSWORD:-wp_secure_password}
+    volumes:
+      - stockmaster_wp_data:/var/www/html
+    depends_on:
+      wordpress-db:
+        condition: service_healthy
+    networks:
+      - stockmaster-net
+
+  # ----------------------------------------------------------------------------
+  # 7. Frontend: React SPA (Vite + Nginx en producción/docker)
+  # ----------------------------------------------------------------------------
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: stockmaster-frontend
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-3000}:80"
+    depends_on:
+      - api
+    networks:
+      - stockmaster-net
+
+volumes:
+  stockmaster_mongo_data:
+    name: stockmaster_mongo_data
+  stockmaster_mysql_data:
+    name: stockmaster_mysql_data
+  stockmaster_wp_db_data:
+    name: stockmaster_wp_db_data
+  stockmaster_wp_data:
+    name: stockmaster_wp_data
+
+networks:
+  stockmaster-net:
+    name: stockmaster-net
+    driver: bridge

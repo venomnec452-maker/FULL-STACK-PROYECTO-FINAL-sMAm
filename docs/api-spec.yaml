@@ -1,0 +1,782 @@
+openapi: 3.0.3
+info:
+  title: StockMaster RESTful API Specification
+  version: 1.0.0
+  description: |
+    Especificación OpenAPI 3.0 completa para el ecosistema **StockMaster Full Stack** — Sistema Integral de Gestión de Depósito, Inventario y Control de Stock.
+    Incluye los servicios de Node.js/Express (Núcleo de Inventario) y Laravel 11 (Módulo Satélite de Compras y Recepciones).
+  contact:
+    name: Soporte Académico y Técnico StockMaster
+    email: admin@stockmaster.com
+servers:
+  - url: http://localhost:5001/api/v1
+    description: Servidor Core Node.js / Express (Desarrollo Local)
+  - url: http://localhost:8000/api/compras
+    description: Microservicio Satélite Laravel 11 (Compras y Proveedores)
+
+tags:
+  - name: Autenticación
+    description: Gestión de sesiones, login, refresh token HttpOnly y perfil de usuario
+  - name: Productos
+    description: Catálogo maestro de artículos, precios, stock y ubicaciones
+  - name: Categorías
+    description: Clasificación taxonómica de productos
+  - name: Proveedores
+    description: Directorio comercial de proveedores de mercadería
+  - name: Inventario
+    description: Registro de entradas, salidas atómicas, ajustes auditados e historial
+  - name: Reportes
+    description: Métricas ejecutivas, valuación patrimonial y alertas de reposición
+  - name: Compras (Laravel)
+    description: Órdenes de compra y recepciones con sincronización idempotente hacia Node.js
+
+paths:
+  # ==========================================
+  # AUTENTICACIÓN
+  # ==========================================
+  /auth/register:
+    post:
+      tags: [Autenticación]
+      summary: Registro de nuevo usuario (Operario por defecto)
+      description: Permite registrar un nuevo usuario en la plataforma. Por seguridad, el rol asignado siempre es 'operario'.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: Usuario registrado con éxito
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '409':
+          description: El correo electrónico ya se encuentra registrado
+
+  /auth/login:
+    post:
+      tags: [Autenticación]
+      summary: Autenticación de usuario
+      description: Emite un Access Token JWT en el payload JSON y un Refresh Token en una cookie segura HttpOnly.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Login exitoso
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+                example: stockmaster_refresh_token=eyJhbGciOi...; HttpOnly; SameSite=Lax; Path=/
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '401':
+          description: Credenciales incorrectas o cuenta inactiva
+
+  /auth/refresh:
+    post:
+      tags: [Autenticación]
+      summary: Rotación de Access Token mediante Refresh Token
+      description: Lee la cookie `stockmaster_refresh_token` y emite un nuevo Access Token JWT de 15 minutos.
+      responses:
+        '200':
+          description: Token renovado exitosamente
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean, example: true }
+                  message: { type: string, example: "Token renovado exitosamente" }
+                  data:
+                    type: object
+                    properties:
+                      accessToken: { type: string, example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." }
+        '401':
+          description: Refresh Token ausente, inválido o expirado
+
+  /auth/logout:
+    post:
+      tags: [Autenticación]
+      summary: Cierre de sesión seguro
+      description: Elimina la cookie HttpOnly del Refresh Token del navegador.
+      responses:
+        '200':
+          description: Sesión cerrada exitosamente
+
+  /auth/me:
+    get:
+      tags: [Autenticación]
+      summary: Obtener perfil del usuario autenticado
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Datos del usuario en sesión
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  # ==========================================
+  # PRODUCTOS
+  # ==========================================
+  /products:
+    get:
+      tags: [Productos]
+      summary: Listar productos con búsqueda, filtros y paginación
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: search
+          in: query
+          schema: { type: string }
+          description: Término de búsqueda (filtra por nombre, SKU o código de barras)
+        - name: category
+          in: query
+          schema: { type: string }
+          description: ID de categoría para filtrar
+        - name: status
+          in: query
+          schema: { type: string, enum: [activo, inactivo] }
+        - name: page
+          in: query
+          schema: { type: integer, default: 1 }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 10 }
+      responses:
+        '200':
+          description: Lista paginada de productos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedProductList'
+
+    post:
+      tags: [Productos]
+      summary: Crear un nuevo producto en catálogo (Solo Administrador)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProductCreateRequest'
+      responses:
+        '201':
+          description: Producto registrado exitosamente
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '409':
+          description: Ya existe un producto con el mismo SKU
+
+  /products/{id}:
+    get:
+      tags: [Productos]
+      summary: Obtener detalle de un producto por ID
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Ficha detallada del producto
+        '404':
+          description: Producto no encontrado
+
+    patch:
+      tags: [Productos]
+      summary: Actualizar datos maestros de producto (Solo Administrador)
+      description: |
+        Regla de negocio: El campo `currentStock` NO puede ser editado arbitrariamente por este endpoint.
+        Cualquier cambio de stock debe realizarse a través del módulo de inventario.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProductUpdateRequest'
+      responses:
+        '200':
+          description: Producto actualizado
+        '400':
+          description: Intento de modificación arbitraria de stock rechazada
+
+    delete:
+      tags: [Productos]
+      summary: Eliminar o desactivar producto (Solo Administrador)
+      description: |
+        Regla de negocio: Si el producto posee movimientos históricos, el sistema rechaza el borrado físico y aplica un Soft Delete (desactivación).
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Producto eliminado físicamente o desactivado lógicamente por trazabilidad
+
+  # ==========================================
+  # CATEGORÍAS
+  # ==========================================
+  /categories:
+    get:
+      tags: [Categorías]
+      summary: Listar todas las categorías
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Colección de categorías disponibles
+    post:
+      tags: [Categorías]
+      summary: Crear nueva categoría (Solo Administrador)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string, example: "Herramientas Manuales" }
+                description: { type: string, example: "Martillos, destornilladores y llaves" }
+      responses:
+        '201':
+          description: Categoría creada
+
+  /categories/{id}:
+    patch:
+      tags: [Categorías]
+      summary: Editar categoría (Solo Administrador)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Categoría actualizada
+    delete:
+      tags: [Categorías]
+      summary: Eliminar o desactivar categoría (Solo Administrador)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Categoría eliminada o desactivada si tiene productos asociados
+
+  # ==========================================
+  # PROVEEDORES
+  # ==========================================
+  /suppliers:
+    get:
+      tags: [Proveedores]
+      summary: Listar proveedores registrados
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Lista de proveedores
+    post:
+      tags: [Proveedores]
+      summary: Registrar proveedor (Solo Administrador)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string, example: "Distribuidora Industrial SA" }
+                taxId: { type: string, example: "80012345-6" }
+                phone: { type: string, example: "+595 21 555-1234" }
+                email: { type: string, example: "ventas@distribuidora.com" }
+                address: { type: string, example: "Av. Eusebio Ayala 1234" }
+      responses:
+        '201':
+          description: Proveedor registrado
+
+  /suppliers/{id}:
+    get:
+      tags: [Proveedores]
+      summary: Detalle de un proveedor
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Ficha de proveedor
+
+  # ==========================================
+  # INVENTARIO
+  # ==========================================
+  /inventory:
+    get:
+      tags: [Inventario]
+      summary: Consulta general de stock en depósito
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Resumen general de stock por artículo
+
+  /inventory/low-stock:
+    get:
+      tags: [Inventario]
+      summary: Productos en nivel crítico o bajo stock mínimo
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Lista de productos con existencias inferiores o iguales al umbral mínimo
+
+  /inventory/movements:
+    get:
+      tags: [Inventario]
+      summary: Historial completo de movimientos de almacén
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: type
+          in: query
+          schema: { type: string, enum: [entrada, salida, ajuste] }
+        - name: startDate
+          in: query
+          schema: { type: string, format: date }
+        - name: endDate
+          in: query
+          schema: { type: string, format: date }
+      responses:
+        '200':
+          description: Bitácora de movimientos auditados
+
+  /inventory/entries:
+    post:
+      tags: [Inventario]
+      summary: Registrar Entrada de Mercadería (Ingreso a depósito)
+      description: |
+        Incrementa atómicamente el stock del producto e inserta el registro histórico inmutable.
+        Acepta autenticación por Bearer JWT de usuario o cabecera `x-internal-api-key` (para integración con Laravel).
+      security:
+        - bearerAuth: []
+        - m2mApiKey: []
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: false
+          schema: { type: string }
+          description: Clave UUID de idempotencia para evitar duplicados en retransmisiones M2M
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StockEntryRequest'
+      responses:
+        '201':
+          description: Entrada registrada y existencias incrementadas
+        '400':
+          description: Cantidad no válida o producto inactivo
+
+  /inventory/exits:
+    post:
+      tags: [Inventario]
+      summary: Registrar Salida de Mercadería (Despacho / Venta)
+      description: |
+        Disminuye atómicamente las existencias mediante `findOneAndUpdate` con `$gte`.
+        Regla de negocio: Si la cantidad solicitada supera el stock disponible en ese milisegundo, la operación es rechazada con HTTP 400 previniendo saldos negativos.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StockExitRequest'
+      responses:
+        '201':
+          description: Salida confirmada y stock decrementado
+        '400':
+          description: Stock insuficiente o cantidad inválida
+
+  /inventory/adjustments:
+    post:
+      tags: [Inventario]
+      summary: Registrar Ajuste de Inventario (Solo Administrador)
+      description: |
+        Permite regularizar discrepancias encontradas en inventario físico.
+        Regla de negocio: Requiere obligatoriamente un motivo justificado (rotura, vencimiento, desvío de conteo).
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StockAdjustmentRequest'
+      responses:
+        '201':
+          description: Ajuste auditado y aplicado
+
+  /inventory/products/{id}/movements:
+    get:
+      tags: [Inventario]
+      summary: Historial de movimientos de un producto específico (Kardex)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Kardex del producto
+
+  # ==========================================
+  # REPORTES
+  # ==========================================
+  /reports/dashboard:
+    get:
+      tags: [Reportes]
+      summary: Métricas consolidadas para el Dashboard
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: KPIs de productos totales, alertas, movimientos recientes y valor de almacén
+
+  /reports/stock:
+    get:
+      tags: [Reportes]
+      summary: Reporte valorizado de inventario y márgenes
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Balance financiero del stock disponible
+
+  /reports/low-stock:
+    get:
+      tags: [Reportes]
+      summary: Reporte detallado de artículos críticos con déficit de reposición
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Lista de productos en riesgo de desabastecimiento
+
+  # ==========================================
+  # COMPRAS (LARAVEL 11)
+  # ==========================================
+  /orders:
+    get:
+      tags: [Compras (Laravel)]
+      summary: Listar Órdenes de Compra
+      responses:
+        '200':
+          description: Colección de órdenes de compra
+    post:
+      tags: [Compras (Laravel)]
+      summary: Crear nueva Orden de Compra
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PurchaseOrderRequest'
+      responses:
+        '201':
+          description: Orden de compra emitida en estado borrador/aprobada
+
+  /receipts:
+    get:
+      tags: [Compras (Laravel)]
+      summary: Listar Recepciones de Mercadería
+      responses:
+        '200':
+          description: Historial de recepciones físicas en muelle
+    post:
+      tags: [Compras (Laravel)]
+      summary: Confirmar Recepción y Sincronizar Stock con Node.js
+      description: |
+        Almacena la recepción en MySQL e invoca inmediatamente `POST /api/v1/inventory/entries` en el backend Node.js
+        usando HTTP con `x-internal-api-key` y UUID de Idempotencia.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GoodsReceiptRequest'
+      responses:
+        '201':
+          description: Recepción almacenada y stock sincronizado exitosamente con el Core Node.js
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Ingrese el Access Token emitido en `/auth/login`
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: stockmaster_refresh_token
+      description: Cookie segura HttpOnly utilizada para rotar el Access Token
+    m2mApiKey:
+      type: apiKey
+      in: header
+      name: x-internal-api-key
+      description: Clave secreta precompartida para comunicación Machine-to-Machine entre Laravel y Node.js
+
+  responses:
+    ValidationError:
+      description: Error de validación de esquema con Zod
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              success: { type: boolean, example: false }
+              message: { type: string, example: "Error en los datos suministrados" }
+              errors:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    field: { type: string, example: "sku" }
+                    message: { type: string, example: "El SKU es requerido" }
+    UnauthorizedError:
+      description: No autenticado o token JWT no provisto/expirado
+    ForbiddenError:
+      description: Privilegios insuficientes para la acción solicitada
+
+  schemas:
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+          example: admin@stockmaster.com
+        password:
+          type: string
+          format: password
+          example: Admin1234!
+
+    RegisterRequest:
+      type: object
+      required: [fullName, email, password]
+      properties:
+        fullName:
+          type: string
+          example: Carlos Benítez
+        email:
+          type: string
+          format: email
+          example: operario@stockmaster.com
+        password:
+          type: string
+          minLength: 8
+          example: Operario1234!
+
+    AuthResponse:
+      type: object
+      properties:
+        success: { type: boolean, example: true }
+        message: { type: string, example: "Operación exitosa" }
+        data:
+          type: object
+          properties:
+            user:
+              $ref: '#/components/schemas/User'
+            accessToken:
+              type: string
+              example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+
+    User:
+      type: object
+      properties:
+        id: { type: string, example: "661f2a3b4c5d6e7f8a9b0c1d" }
+        fullName: { type: string, example: "Administrador General" }
+        email: { type: string, example: "admin@stockmaster.com" }
+        role: { type: string, enum: [admin, operario], example: "admin" }
+        isActive: { type: boolean, example: true }
+        createdAt: { type: string, format: date-time }
+
+    UserResponse:
+      type: object
+      properties:
+        success: { type: boolean, example: true }
+        data:
+          $ref: '#/components/schemas/User'
+
+    Product:
+      type: object
+      properties:
+        id: { type: string, example: "661f2a3b4c5d6e7f8a9b0c2e" }
+        name: { type: string, example: "Taladro Percutor Industrial 750W" }
+        description: { type: string, example: "Taladro de alto impacto con mandril de 13mm" }
+        sku: { type: string, example: "HERR-TAL-001" }
+        barcode: { type: string, example: "7891234567890" }
+        category: { type: object, properties: { id: { type: string }, name: { type: string } } }
+        unit: { type: string, example: "unidad" }
+        costPrice: { type: number, example: 45.00 }
+        salePrice: { type: number, example: 75.00 }
+        currentStock: { type: integer, example: 25 }
+        minStock: { type: integer, example: 10 }
+        location: { type: string, example: "Pasillo A - Estante 3" }
+        status: { type: string, enum: [activo, inactivo], example: "activo" }
+
+    ProductCreateRequest:
+      type: object
+      required: [name, sku, category, costPrice, salePrice]
+      properties:
+        name: { type: string, example: "Amoladora Angular 4-1/2" }
+        description: { type: string, example: "Velocidad variable 11000 RPM" }
+        sku: { type: string, example: "HERR-AMO-002" }
+        barcode: { type: string, example: "7891234567891" }
+        category: { type: string, example: "661f2a3b4c5d6e7f8a9b0c2a" }
+        unit: { type: string, example: "unidad" }
+        costPrice: { type: number, minimum: 0, example: 38.50 }
+        salePrice: { type: number, minimum: 0, example: 62.00 }
+        minStock: { type: integer, minimum: 0, example: 5 }
+        location: { type: string, example: "Pasillo B - Estante 1" }
+
+    ProductUpdateRequest:
+      type: object
+      properties:
+        name: { type: string }
+        description: { type: string }
+        category: { type: string }
+        unit: { type: string }
+        costPrice: { type: number }
+        salePrice: { type: number }
+        minStock: { type: integer }
+        location: { type: string }
+        status: { type: string, enum: [activo, inactivo] }
+
+    PaginatedProductList:
+      type: object
+      properties:
+        success: { type: boolean, example: true }
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/Product'
+            total: { type: integer, example: 50 }
+            page: { type: integer, example: 1 }
+            totalPages: { type: integer, example: 5 }
+
+    StockEntryRequest:
+      type: object
+      required: [product, quantity, reason]
+      properties:
+        product: { type: string, example: "661f2a3b4c5d6e7f8a9b0c2e" }
+        quantity: { type: integer, minimum: 1, example: 15 }
+        reason: { type: string, example: "Recepción de compra según remisión #1029" }
+        supplier: { type: string, example: "661f2a3b4c5d6e7f8a9b0c30" }
+        documentReference: { type: string, example: "FAC-001-09823" }
+        notes: { type: string, example: "Mercadería inspeccionada en muelle norte" }
+
+    StockExitRequest:
+      type: object
+      required: [product, quantity, reason]
+      properties:
+        product: { type: string, example: "661f2a3b4c5d6e7f8a9b0c2e" }
+        quantity: { type: integer, minimum: 1, example: 5 }
+        reason: { type: string, example: "Despacho a sucursal central" }
+        documentReference: { type: string, example: "REM-2026-0044" }
+        notes: { type: string, example: "Retirado por transportista interno" }
+
+    StockAdjustmentRequest:
+      type: object
+      required: [product, newStock, reason]
+      properties:
+        product: { type: string, example: "661f2a3b4c5d6e7f8a9b0c2e" }
+        newStock: { type: integer, minimum: 0, example: 22 }
+        reason: { type: string, example: "Ajuste por recuento físico en auditoría trimestral" }
+        notes: { type: string, example: "3 unidades dadas de baja por deterioro de empaque" }
+
+    PurchaseOrderRequest:
+      type: object
+      required: [supplier_id, items]
+      properties:
+        supplier_id: { type: integer, example: 1 }
+        expected_date: { type: string, format: date, example: "2026-11-01" }
+        notes: { type: string, example: "Entrega en almacén central" }
+        items:
+          type: array
+          items:
+            type: object
+            required: [sku, product_name, quantity, unit_cost]
+            properties:
+              sku: { type: string, example: "HERR-TAL-001" }
+              product_name: { type: string, example: "Taladro Percutor" }
+              quantity: { type: integer, example: 20 }
+              unit_cost: { type: number, example: 45.00 }
+
+    GoodsReceiptRequest:
+      type: object
+      required: [purchase_order_id, delivery_note, items]
+      properties:
+        purchase_order_id: { type: integer, example: 1 }
+        delivery_note: { type: string, example: "REM-88219" }
+        notes: { type: string, example: "Recepción conforme de 20 unidades" }
+        items:
+          type: array
+          items:
+            type: object
+            required: [sku, product_id, quantity_received]
+            properties:
+              sku: { type: string, example: "HERR-TAL-001" }
+              product_id: { type: string, example: "661f2a3b4c5d6e7f8a9b0c2e" }
+              quantity_received: { type: integer, example: 20 }

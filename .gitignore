@@ -1,0 +1,77 @@
+# ==============================================================================
+# StockMaster Full Stack - .gitignore
+# Reglas de exclusión para Monorepositorio (React, Node.js, Laravel, WordPress)
+# ==============================================================================
+
+# Entornos y Secretos (Seguridad Crítica: NUNCA subir al repositorio)
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.env
+!.env.example
+!backend-node/.env.example
+!backend-laravel/.env.example
+
+# Dependencias de Node / Frontend / Backend Node
+node_modules/
+.pnp
+.pnp.js
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Compilados y builds
+dist/
+dist-ssr/
+build/
+*.tsbuildinfo
+
+# Logs y Auditoría Local
+logs/
+*.log
+
+# Dependencias de PHP / Laravel
+backend-laravel/vendor/
+backend-laravel/bootstrap/cache/*
+!backend-laravel/bootstrap/cache/.gitignore
+backend-laravel/storage/*.key
+backend-laravel/storage/framework/cache/*
+!backend-laravel/storage/framework/cache/.gitignore
+backend-laravel/storage/framework/sessions/*
+!backend-laravel/storage/framework/sessions/.gitignore
+backend-laravel/storage/framework/views/*
+!backend-laravel/storage/framework/views/.gitignore
+backend-laravel/storage/logs/*
+!backend-laravel/storage/logs/.gitignore
+backend-laravel/.phpunit.result.cache
+
+# WordPress (Archivos dinámicos y subidas)
+wordpress/wp-content/uploads/
+wordpress/wp-content/upgrade/
+wordpress/wp-content/backup-db/
+wp-config.php
+
+# Persistencia de Datos de Docker (Volúmenes en disco local si se mapean)
+docker-data/
+.docker/
+
+# Archivos del Sistema Operativo
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+.DS_Store
+
+# Editores y Entornos de Desarrollo
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

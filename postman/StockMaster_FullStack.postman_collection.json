@@ -1,0 +1,273 @@
+{
+  "info": {
+    "_postman_id": "a9182374-1234-4567-89ab-cdef01234567",
+    "name": "StockMaster Full Stack - Colección Oficial de Pruebas",
+    "description": "Colección completa de endpoints para pruebas de la API RESTful de StockMaster (Node.js/Express y Laravel Purchases).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:5000/api/v1", "type": "string" },
+    { "key": "laravelUrl", "value": "http://localhost:8000/api/compras", "type": "string" },
+    { "key": "adminToken", "value": "", "type": "string" },
+    { "key": "operarioToken", "value": "", "type": "string" },
+    { "key": "createdProductId", "value": "", "type": "string" },
+    { "key": "createdCategoryId", "value": "", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "1. Autenticación y Sesiones",
+      "item": [
+        {
+          "name": "Login como Administrador",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "if (jsonData.success) {",
+                  "    pm.collectionVariables.set('adminToken', jsonData.data.accessToken);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@stockmaster.com\",\n  \"password\": \"Admin1234!\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/auth/login", "host": ["{{baseUrl}}"], "path": ["auth", "login"] }
+          }
+        },
+        {
+          "name": "Login como Operario",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "if (jsonData.success) {",
+                  "    pm.collectionVariables.set('operarioToken', jsonData.data.accessToken);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"operario@stockmaster.com\",\n  \"password\": \"Operario1234!\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/auth/login", "host": ["{{baseUrl}}"], "path": ["auth", "login"] }
+          }
+        },
+        {
+          "name": "Consultar Perfil Autenticado (/auth/me)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": { "raw": "{{baseUrl}}/auth/me", "host": ["{{baseUrl}}"], "path": ["auth", "me"] }
+          }
+        },
+        {
+          "name": "Renovar Token (/auth/refresh)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/auth/refresh", "host": ["{{baseUrl}}"], "path": ["auth", "refresh"] }
+          }
+        },
+        {
+          "name": "Cerrar Sesión (/auth/logout)",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{baseUrl}}/auth/logout", "host": ["{{baseUrl}}"], "path": ["auth", "logout"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Categorías",
+      "item": [
+        {
+          "name": "Listar Categorías",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": { "raw": "{{baseUrl}}/categories", "host": ["{{baseUrl}}"], "path": ["categories"] }
+          }
+        },
+        {
+          "name": "Crear Categoría (Admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{adminToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Seguridad Industrial\",\n  \"description\": \"Cascos, guantes y protección personal\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/categories", "host": ["{{baseUrl}}"], "path": ["categories"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Catálogo de Productos",
+      "item": [
+        {
+          "name": "Listar Productos (con filtros y paginación)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": { "raw": "{{baseUrl}}/products?page=1&limit=10", "host": ["{{baseUrl}}"], "path": ["products"], "query": [{ "key": "page", "value": "1" }, { "key": "limit", "value": "10" }] }
+          }
+        },
+        {
+          "name": "Crear Producto (Admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{adminToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Guantes de Nitrilo Reforzados\",\n  \"sku\": \"SEG-GNT-01\",\n  \"category\": \"65f123456789abcdef012345\",\n  \"unit\": \"paquete\",\n  \"costPrice\": 15.00,\n  \"salePrice\": 28.50,\n  \"minStock\": 20,\n  \"location\": \"Pasillo 1, Bandeja A-3\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/products", "host": ["{{baseUrl}}"], "path": ["products"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Motor de Inventario",
+      "item": [
+        {
+          "name": "Resumen General del Inventario",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": { "raw": "{{baseUrl}}/inventory", "host": ["{{baseUrl}}"], "path": ["inventory"] }
+          }
+        },
+        {
+          "name": "Productos en Stock Bajo / Crítico",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": { "raw": "{{baseUrl}}/inventory/low-stock", "host": ["{{baseUrl}}"], "path": ["inventory", "low-stock"] }
+          }
+        },
+        {
+          "name": "Registrar Entrada de Mercadería",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{operarioToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"product\": \"{{createdProductId}}\",\n  \"quantity\": 50,\n  \"documentReference\": \"REM-89234\",\n  \"reason\": \"Ingreso por compra a proveedor oficial\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/inventory/entries", "host": ["{{baseUrl}}"], "path": ["inventory", "entries"] }
+          }
+        },
+        {
+          "name": "Registrar Salida / Despacho",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{operarioToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"product\": \"{{createdProductId}}\",\n  \"quantity\": 10,\n  \"documentReference\": \"FAC-00124\",\n  \"reason\": \"Despacho a sucursal norte\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/inventory/exits", "host": ["{{baseUrl}}"], "path": ["inventory", "exits"] }
+          }
+        },
+        {
+          "name": "Ajuste de Inventario Físico (Solo Admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{adminToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"product\": \"{{createdProductId}}\",\n  \"newStock\": 45,\n  \"reason\": \"Ajuste físico verificado en auditoría trimestral\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/inventory/adjustments", "host": ["{{baseUrl}}"], "path": ["inventory", "adjustments"] }
+          }
+        },
+        {
+          "name": "Historial de Movimientos de Almacén",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": { "raw": "{{baseUrl}}/inventory/movements", "host": ["{{baseUrl}}"], "path": ["inventory", "movements"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Reportes y Analítica",
+      "item": [
+        {
+          "name": "Métricas para Dashboard Principal",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": { "raw": "{{baseUrl}}/reports/dashboard", "host": ["{{baseUrl}}"], "path": ["reports", "dashboard"] }
+          }
+        },
+        {
+          "name": "Reporte de Valorización y Margen",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": { "raw": "{{baseUrl}}/reports/stock", "host": ["{{baseUrl}}"], "path": ["reports", "stock"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "6. Módulo de Compras (Laravel API)",
+      "item": [
+        {
+          "name": "Listar Órdenes de Compra",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{laravelUrl}}/ordenes", "host": ["{{laravelUrl}}"], "path": ["ordenes"] }
+          }
+        },
+        {
+          "name": "Registrar Recepción contra Remito",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"purchase_order_id\": 1,\n  \"supplier_delivery_note\": \"REMITO-PROV-9944\",\n  \"receipt_date\": \"2026-10-14\",\n  \"received_by\": \"Operario Almacén\",\n  \"idempotency_key\": \"UUID-REC-9944-TEST\",\n  \"items\": [\n    {\n      \"purchase_order_item_id\": 1,\n      \"quantity_received\": 25\n    }\n  ]\n}"
+            },
+            "url": { "raw": "{{laravelUrl}}/recepciones", "host": ["{{laravelUrl}}"], "path": ["recepciones"] }
+          }
+        }
+      ]
+    }
+  ]
+}
